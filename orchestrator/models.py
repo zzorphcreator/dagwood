@@ -61,7 +61,7 @@ class ComparisonModel:
 
 
 # Standard (uncached, short-prompt) rates, cheap -> flagship per provider, checked 2026-10-12:
-#   Anthropic: claude-api skill model table (cached 2026-10-06)
+#   Anthropic: https://www.anthropic.com/pricing
 #   OpenAI:    https://developers.openai.com/api/docs/pricing
 #   xAI:       https://docs.x.ai/docs/models
 #   Google:    https://ai.google.dev/gemini-api/docs/pricing (updated 2026-10-09)
