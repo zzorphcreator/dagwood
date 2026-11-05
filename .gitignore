@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Local run data: contains your prompts, agent outputs and generated files
+runs.db
+runs.db-*
+artifacts/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# UI
+ui/node_modules/
+ui/dist/
+
+# Local scratch and backups
+_scratch/
+*.tar.gz

@@ -1,0 +1,23 @@
+# Pinned to the versions the test suite was last run against (2026-11-05, Python 3.13).
+# Newer versions will probably work, but these are known-good.
+
+# Agents, graph execution, API
+pydantic-ai==2.54.0
+langgraph==1.2.14
+fastapi==0.143.0
+uvicorn==0.54.0
+python-dotenv==1.2.4
+openai==3.26.1
+
+# Tools: Composio (optional at runtime, only used when COMPOSIO_API_KEY is set) and MCP
+composio==0.22.0
+fastmcp==4.1.0
+
+# Deliverables (PDF / slides / PPTX)
+markdown-it-py==4.2.0
+python-pptx==1.0.2
+weasyprint==70.0
+
+# Tests
+pytest==9.1.1
+httpx==0.28.1
