@@ -1,7 +1,9 @@
 """Models offered for runs. All are served by DeepInfra's OpenAI-compatible API (one key).
 
-Prices are USD per 1M tokens from DeepInfra's model list, checked 2026-10-09; providers
-change them, so costs shown are estimates. Every model here was checked live for tool
+Prices are USD per 1M tokens from DeepInfra's model list, checked on PRICES_CHECKED below.
+Providers change prices often and retire model ids, so every cost shown is an estimate: your
+provider's bill is the real figure. To update, edit the rates in MODELS from
+https://deepinfra.com/pricing and bump PRICES_CHECKED. Every model here was checked live for tool
 calling, visible reasoning and structured planner output before being added.
 """
 
@@ -9,6 +11,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
+
+PRICES_CHECKED = "2026-10-09"  # when the DeepInfra rates in MODELS were last checked
 
 
 @dataclass(frozen=True)

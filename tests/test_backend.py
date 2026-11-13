@@ -2288,3 +2288,41 @@ def test_custom_tools_are_listed_and_callable_by_an_agent():
     detail = record.nodes["h"]
     assert detail.status == NodeStatus.SUCCEEDED and sorted(seen) == ["calc", "team_handbook"]
     assert detail.tool_calls[0].name == "team_handbook" and "24 December" in detail.output
+
+
+def test_estimates_say_when_model_prices_were_last_checked():
+    from orchestrator.estimate import estimate_plan
+    from orchestrator.models import PRICES_CHECKED
+
+    est = estimate_plan(diamond_plan(), RunStore(), input_cap=300_000)
+    assert est["prices_checked"] == PRICES_CHECKED and len(PRICES_CHECKED) == 10
+
+
+# --- export: a finished run's final answer as a PDF, without a publishing step ---------------------
+
+
+def test_finished_run_exports_its_final_answer_as_pdf():
+    from orchestrator.documents import answer_html
+
+    client = api_client()
+    api_module.app.state.runner = stub_runner
+    try:
+        waiting = client.post("/tasks", json={"task": "demo", "plan": diamond_plan().model_dump(), "require_approval": True})
+        assert client.get(f"/runs/{waiting.json()['run_id']}/export.pdf").status_code == 409  # nothing ran yet
+        run_id = client.post("/tasks", json={"task": "demo", "plan": diamond_plan().model_dump()}).json()["run_id"]
+        assert _wait_for(client, run_id)["status"] == "succeeded"
+    finally:
+        api_module.app.state.runner = None
+    assert api_module.final_answers(api_module.app.state.store.get(run_id)) == [("merge", "out-d")]
+    resp = client.get(f"/runs/{run_id}/export.pdf")
+    assert resp.status_code == 200 and resp.content.startswith(b"%PDF")
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.headers["content-disposition"] == f'inline; filename="dagwood-{run_id}.pdf"'
+    assert "attachment" in client.get(f"/runs/{run_id}/export.pdf?download=1").headers["content-disposition"]
+    assert client.get("/runs/nope/export.pdf").status_code == 404
+
+    # agent output is untrusted: raw HTML is escaped, and several final steps each get a heading
+    html = answer_html("<b>t</b>", "sub", [("first", "<script>x</script> **bold**"), ("second", "| a |\n|---|\n| 1 |")], [])
+    assert "<script>" not in html and "<strong>bold</strong>" in html and "<b>t</b>" not in html
+    assert html.count("<h2>") == 2 and "<table>" in html
+    assert "<h2>" not in answer_html("t", "s", [("only", "text")], [])

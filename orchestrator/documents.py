@@ -477,6 +477,50 @@ def pdf_bytes(doc: DocumentSpec, extra_css: str = "") -> bytes:
     return HTML(string=report_html(doc, extra_css), url_fetcher=_deny_fetcher()).write_pdf()
 
 
+# --- On-demand export of a finished run's answer (no model call) ---------------------------------
+
+EXPORT_CSS = """
+.cover{margin:6mm 0 8mm}.cover h1{font-size:19pt}.cover p{font-size:9.5pt}
+section h1{font-size:15pt;color:#0f172a;margin:6mm 0 3mm}
+section h3,section h4{font-size:11.5pt;color:#0f172a;margin:5mm 0 2mm;break-after:avoid}
+section table{border-collapse:collapse;margin:3mm 0;font-size:9pt;width:100%}
+section table th,section table td{border-bottom:1px solid #e2e8f0;padding:1.2mm 3mm 1.2mm 0;text-align:left;vertical-align:top}
+section table th{color:#4f46e5;border-bottom:1.5px solid #4f46e5}
+pre{background:#f1f5f9;padding:2.5mm 3mm;border-radius:1.5mm;font-size:8.5pt;white-space:pre-wrap;overflow-wrap:anywhere}
+pre code{background:none;padding:0}blockquote{margin:0 0 2.5mm;padding-left:4mm;border-left:2px solid #c7d2fe;color:#475569}
+.steps{margin-top:10mm;break-inside:avoid}.steps td:last-child,.steps th:last-child{text-align:right;white-space:nowrap}
+"""
+
+
+def answer_html(title: str, subtitle: str, answers: list[tuple[str, str]], steps: list[tuple[str, str, str]]) -> str:
+    """A run's final answer as a printable page. `answers` are (heading, markdown) per final step,
+    shown under headings only when there are several; `steps` are (agent, model, cost) rows.
+    Agent output is untrusted: markdown renders with raw HTML escaped and images disabled."""
+    many = len(answers) > 1
+    body = "".join(
+        f"<section>{f'<h2>{_e(heading)}</h2>' if many else ''}{render_markdown(text)}</section>"
+        for heading, text in answers
+    )
+    rows = "".join(f"<tr><td>{_e(a)}</td><td>{_e(m)}</td><td>{_e(c)}</td></tr>" for a, m, c in steps)
+    table = (
+        '<section class="steps"><h2>How this was produced</h2><table><thead><tr><th>Agent</th><th>Model</th>'
+        f"<th>Est. cost</th></tr></thead><tbody>{rows}</tbody></table></section>"
+        if steps
+        else ""
+    )
+    return (
+        f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{_e(title)}</title>'
+        f"<style>{REPORT_CSS}{EXPORT_CSS}</style></head><body>"
+        f'<div class="cover"><h1>{_e(title)}</h1><p>{_e(subtitle)}</p></div>{body}{table}</body></html>'
+    )
+
+
+def html_to_pdf(html: str) -> bytes:
+    from weasyprint import HTML
+
+    return HTML(string=html, url_fetcher=_deny_fetcher()).write_pdf()
+
+
 # --- PowerPoint ----------------------------------------------------------------------------------
 
 _INLINE = re.compile(r"\*\*(.+?)\*\*|\[([^\]]+)\]\([^)]*\)|`([^`]+)`")

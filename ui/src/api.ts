@@ -41,6 +41,9 @@ export interface FileInfo {
 export const fileUrl = (runId: string, name: string, download = false) =>
   `/runs/${runId}/files/${encodeURIComponent(name)}${download ? '?download=1' : ''}`;
 
+/** The run's final answer as a plain PDF, rendered on request (no model call). */
+export const exportUrl = (runId: string, download = false) => `/runs/${runId}/export.pdf${download ? '?download=1' : ''}`;
+
 export type Tier = 'light' | 'standard' | 'heavy';
 export const TIERS: Tier[] = ['light', 'standard', 'heavy'];
 
@@ -327,6 +330,7 @@ export interface CostEstimate {
   planner_cost_usd?: number;
   options: Record<string, OptionPrice>; // the plan priced under each routing, keyed like routingKey()
   comparisons: Comparison[]; // the whole plan on other providers' models; not runnable here
+  prices_checked?: string; // when the model rates behind these figures were last checked
   comparison_prices_checked: string;
 }
 

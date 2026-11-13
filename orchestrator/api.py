@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from .catalog import BUILTIN, Catalog, split_id
@@ -18,7 +18,7 @@ from .composio_source import ComposioSource
 from .estimate import estimate_plan
 from .executor import Runner, agent_limits, close_cancelled, execute_run, extract_usage, run_totals
 from .live import live_ops
-from .documents import files_dir
+from .documents import answer_html, files_dir, html_to_pdf
 from .factory import MAX_AGENTS_HINT, apply_delivery, build_supervisor, get_model, plan_problems
 from .pricing import estimate_cost
 from .manager import RunManager
@@ -535,6 +535,46 @@ async def get_file(run_id: str, name: str, download: bool = False):
         headers["Content-Security-Policy"] = "sandbox allow-scripts"
     disposition = "attachment" if download or file.format == "pptx" else "inline"
     return FileResponse(path, media_type=file.media_type, filename=name, content_disposition_type=disposition, headers=headers)
+
+
+def final_answers(record: RunRecord) -> list[tuple[str, str]]:
+    """(goal, output) of every final step that succeeded: the run's answer, as text."""
+    depended = {d for n in record.plan.nodes for d in n.depends_on}
+    answers = []
+    for node in record.plan.nodes:
+        detail = record.nodes.get(node.id)
+        if node.id not in depended and detail and detail.status == NodeStatus.SUCCEEDED and detail.output.strip():
+            answers.append((node.goal, detail.output))
+    return answers
+
+
+@app.get("/runs/{run_id}/export.pdf")
+async def export_run(run_id: str, download: bool = False):
+    """The final answer of a finished run as a plain PDF, rendered on demand: no model call, no cost,
+    nothing stored. For a designed document with charts, use "Deliver as" when submitting."""
+    record = _store().get(run_id)
+    if record is None:
+        raise HTTPException(404, "unknown run")
+    answers = final_answers(record) if record.status.terminal else []
+    if not answers:
+        raise HTTPException(409, "this run has no finished answer to export yet")
+    created = time.strftime("%Y-%m-%d", time.localtime(record.created_at))
+    cost = run_totals(record)["total_cost_usd"]
+    subtitle = f"Dagwood run {record.run_id} · {created} · {len(record.plan.nodes)} agents · est. cost ${cost:.4f}"
+    steps = [(n.node_id, (n.model or "").rsplit("/", 1)[-1], f"${n.cost_usd:.4f}") for n in record.nodes.values()]
+    task = record.task.strip()
+    html = answer_html(task if len(task) <= 160 else task[:157] + "…", subtitle, answers, steps)
+    try:
+        data = await asyncio.to_thread(html_to_pdf, html)
+    except OSError as e:  # WeasyPrint's system libraries (Pango) are missing
+        raise HTTPException(503, f"PDF rendering is unavailable on this server: {e}")
+    disposition = "attachment" if download else "inline"
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="dagwood-{record.run_id}.pdf"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    }
+    return Response(data, media_type="application/pdf", headers=headers)
 
 
 @app.get("/runs/{run_id}/nodes/{node_id}")

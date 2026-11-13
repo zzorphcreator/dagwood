@@ -51,7 +51,7 @@ by screen, explains what broke during development, and ends with exercises.
 | Tools | `orchestrator/tools.py`, `custom_tools.py`, `catalog.py`, `composio_source.py` | A built-in tool, a placeholder for writing your own, a pluggable tool catalog, scoped per-agent MCP toolsets, destructive tools blocked |
 | Live output | `orchestrator/live.py`, `api.py` | pydantic-ai stream events → in-memory feed → SSE |
 | Persistence | `orchestrator/store.py` | Event log + SQLite snapshots; runs survive restarts |
-| Deliverables | `orchestrator/documents.py` | Structured `DocumentSpec` → PDF (WeasyPrint, no network fetches), HTML slides, PPTX; charts dropped unless their numbers appear in the step's input |
+| Deliverables | `orchestrator/documents.py` | Structured `DocumentSpec` → PDF (WeasyPrint, no network fetches), HTML slides, PPTX; charts dropped unless their numbers appear in the step's input; any finished run's final answer can also be downloaded as a plain PDF with no model call (`/runs/{id}/export.pdf`) |
 | UI | `ui/src/` | Graph layout, plan editor, approval bar, live feed |
 
 ## Quick start
@@ -101,7 +101,8 @@ npm run dev                                     # UI on http://localhost:5173
 Open http://localhost:5173 and type a task. Try **Economy** mode first. To steer the planner,
 set **Agents** (how many) and **Agent types** (for example `researcher, critic`, or your own like
 `fact checker`). Both are optional hints: the planner follows them where the task allows. Typical runs there cost
-a fraction of a cent: a 3-agent run cost $0.0005 at the prices below.
+a fraction of a cent: a 3-agent run cost $0.0005 in November 2026. Model prices change often, so
+treat every figure as an estimate (see [Limitations](#limitations-read-before-you-rely-on-it)).
 
 ### Optional: web search and app tools (Composio)
 
@@ -193,9 +194,13 @@ This is a learning project, not a product.
   web pages from reaching it through DNS rebinding. It is not a substitute for auth.
 - **Run data is stored in plain text.** `runs.db` holds your prompts and every agent's output,
   and `artifacts/` holds generated files. Both are git-ignored. Keep it that way.
-- **Prices are dated.** Model prices in `orchestrator/models.py` were checked on 2026-10-09
-  (DeepInfra) and 2026-10-12 (the comparison-only Claude/OpenAI/xAI/Gemini rows). Providers
-  change prices, and model IDs get retired, so treat all costs as estimates.
+- **Model prices change often, and the ones here are a snapshot.** Every cost Dagwood shows is
+  an estimate: token counts multiplied by rates saved in `orchestrator/models.py`, last checked
+  on 2026-10-09 (DeepInfra) and 2026-10-12 (the comparison-only Claude/OpenAI/xAI/Gemini rows).
+  Providers raise and cut prices, run introductory rates and retire model IDs, so the figures
+  drift. Your provider's dashboard is the real bill. To refresh, copy current rates from
+  [deepinfra.com/pricing](https://deepinfra.com/pricing) into `MODELS` and bump `PRICES_CHECKED`.
+  If a model ID has been retired, runs on it fail; replace it in `MODELS` and `MODES`.
 - **The cost estimator runs low in known cases:**
   - Fan-in/synthesis agents are priced at a flat ~4k input tokens, regardless of how much
     upstream output they actually read.

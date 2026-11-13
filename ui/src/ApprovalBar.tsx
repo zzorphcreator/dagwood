@@ -155,6 +155,14 @@ export default function ApprovalBar({
                 up to {fmtCost(estimate.high_usd)}
                 {estimate.planner_cost_usd != null && ` · planning used ${fmtCost(estimate.planner_cost_usd)}`}
               </span>
+              {estimate.prices_checked && (
+                <span
+                  className="muted price-note"
+                  title="Model prices change often. These figures use rates saved in orchestrator/models.py on that date, so your provider's bill may differ."
+                >
+                  prices as of {estimate.prices_checked}
+                </span>
+              )}
             </div>
           )}
         </div>

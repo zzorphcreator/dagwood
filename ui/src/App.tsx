@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Background, BackgroundVariant, Controls, ReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ArrowUp, CircleHelp, Square, Wrench } from 'lucide-react';
+import { ArrowUp, CircleHelp, FileDown, Square, Wrench } from 'lucide-react';
 import ApprovalBar from './ApprovalBar';
 import FileLinks from './FileLinks';
 import { buildFlow, edgeTypes, layoutFlow, nodeTypes, RefitOn } from './Graph';
@@ -18,6 +18,7 @@ import {
   DELIVER_OPTIONS,
   deleteNode,
   editNode,
+  exportUrl,
   fetchEstimate,
   fetchNode,
   fetchRun,
@@ -314,6 +315,15 @@ export default function App() {
         : null,
     [summary, flowLayout, selected, models, phases],
   );
+
+  const runFiles = useMemo(() => summary?.nodes.flatMap((n) => n.files ?? []) ?? [], [summary]);
+  // A finished run can be exported when a final step (one nothing depends on) succeeded.
+  const canExport = useMemo(() => {
+    if (!summary || !['succeeded', 'failed', 'cancelled'].includes(summary.status)) return false;
+    if (runFiles.some((f) => f.format === 'pdf')) return false; // a publishing step already made a PDF
+    const upstream = new Set(summary.edges.map((e) => e.from));
+    return summary.nodes.some((n) => n.status === 'succeeded' && !upstream.has(n.node_id));
+  }, [summary, runFiles]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -615,7 +625,7 @@ export default function App() {
                 <h1 title={summary.task}>{summary.task}</h1>
               </div>
               <dl className="run-stats">
-                <div title={`Includes planning: ${fmtCost(summary.planner.cost_usd)}. Costs are estimates from token counts.`}>
+                <div title={`Includes planning: ${fmtCost(summary.planner.cost_usd)}. Costs are estimates: token counts times saved model prices, which providers change often. Your provider's bill is the real figure.`}>
                   <dt>Cost</dt>
                   <dd className="cost">{fmtCost(summary.total_cost_usd)}</dd>
                 </div>
@@ -668,10 +678,34 @@ export default function App() {
               when one of your running flows finishes.
             </div>
           )}
-          {summary && summary.nodes.some((n) => (n.files ?? []).length > 0) && (
+          {summary && (runFiles.length > 0 || canExport) && (
             <div className="banner deliverables">
-              <span>Files from this run</span>
-              <FileLinks runId={summary.run_id} files={summary.nodes.flatMap((n) => n.files ?? [])} />
+              {runFiles.length > 0 && (
+                <>
+                  <span>Files from this run</span>
+                  <FileLinks runId={summary.run_id} files={runFiles} />
+                </>
+              )}
+              {canExport && (
+                <div className="export-row">
+                  <span className="file-kind">
+                    <FileDown size={14} /> Final answer as PDF
+                  </span>
+                  <a href={exportUrl(summary.run_id)} target="_blank" rel="noopener noreferrer">
+                    Open
+                  </a>
+                  <a href={exportUrl(summary.run_id, true)} download={`dagwood-${summary.run_id}.pdf`}>
+                    Download
+                  </a>
+                  <span className="muted">
+                    {runFiles.length > 0
+                      ? 'A plain version, made on request at no cost.'
+                      : (summary.deliver ?? 'auto') === 'none'
+                        ? 'A plain version, made on request at no cost. “Deliver as” was Text only, so no designed file was made.'
+                        : 'A plain version, made on request at no cost. For a designed report or slides, set “Deliver as” before you run: on Auto, a file is only made when the task asks for one.'}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           {summary?.status === 'awaiting_approval' && (

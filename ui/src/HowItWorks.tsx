@@ -85,6 +85,12 @@ export function HowItWorksContent() {
           </li>
         ))}
       </ol>
+      <p className="hiw-note">
+        <strong>About costs.</strong> Every cost here is an estimate: the tokens used, multiplied by model prices saved
+        in the code on a fixed date. Providers change prices often and retire models, so check your provider’s
+        dashboard for what you were actually charged, and update the prices in <code>orchestrator/models.py</code> when
+        they drift. Tool calls through Composio are not included.
+      </p>
       <div className="hiw-legend">
         <strong>Box colours:</strong>
         {LEGEND.map((l) => (

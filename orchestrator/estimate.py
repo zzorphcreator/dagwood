@@ -17,6 +17,7 @@ from .models import (
     DEFAULT_MODEL,
     MODELS,
     MODES,
+    PRICES_CHECKED,
     get_info,
     resolve_model,
 )
@@ -108,6 +109,7 @@ def estimate_plan(
         "input_cap_per_agent": input_cap,
         "options": _routing_options(plan, profiles),
         "comparisons": _comparisons(plan, profiles),
+        "prices_checked": PRICES_CHECKED,
         "comparison_prices_checked": COMPARISON_PRICES_CHECKED,
     }
 
