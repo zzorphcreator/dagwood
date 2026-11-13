@@ -11,7 +11,7 @@ I built **Dagwood** to make those parts visible. You give it a task. A planner m
 a graph of worker agents. You review and edit that plan before anything runs. Then you watch the
 agents work, live, and can click any of them to see exactly what it was given and what it produced.
 
-It's small on purpose: about 6,000 lines of Python and TypeScript, with 145 tests that run without
+It's small on purpose: about 9,000 lines of Python and TypeScript, with 148 tests that run without
 API keys. A typical run costs well under a cent. The code is at
 [github.com/zzorphcreator/dagwood](https://github.com/zzorphcreator/dagwood).
 
@@ -317,10 +317,12 @@ If you clone the repo, these are good ways to learn how the pieces fit:
    same task. The edge labels and the inputs panel show how little the final agent now sees, and
    the answer gets worse.
 4. **Make an agent fail.** Set `ORCHESTRATOR_MAX_TOOL_CALLS_PER_AGENT=1` and run a task that
-   needs search. The search agent will likely hit its limit, and everything downstream of it is
-   skipped, with the reason in each node's log.
-5. **Add a tool.** Built-in tools live in `orchestrator/tools.py`. Add one, and the planner can
-   give it to steps that need it.
+   needs search. The search agent fails with "budget limit reached" as soon as it wants a second
+   search, and every step downstream of it is skipped, with the reason in its log ("upstream …
+   did not succeed"). On the task from the tour, that failed run cost $0.0008.
+5. **Add a tool.** `orchestrator/custom_tools.py` has a placeholder tool, `team_handbook`, written
+   as a plain function. Replace it with your own, and the planner can give it to steps that need
+   it.
 6. **Build the missing human-in-the-loop piece.** Add per-call approval: pause an agent when it
    wants to use a risky tool, ask the user, then continue or refuse. pydantic-ai's support for
    tools that require approval is a good place to start, and the approval-bar UI is a model for
