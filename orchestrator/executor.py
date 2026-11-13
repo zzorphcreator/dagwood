@@ -50,7 +50,7 @@ def agent_limits(model_id: str | None = None, external_tools: bool = True) -> Us
     input cap of their own (ModelInfo.input_cap); the lower of the two applies.
 
     The tool-call cap is for external toolkits (search results are large). Agents with only
-    built-in tools (calc, word_count, add_note: free, tiny results) may batch many calls in one
+    built-in tools (calc and your custom tools: free, tiny results) may batch many calls in one
     reply, so they get ORCHESTRATOR_MAX_BUILTIN_TOOL_CALLS_PER_AGENT (default 40) instead; the
     input-token cap still bounds a loop.
     """

@@ -2255,3 +2255,36 @@ def test_requests_for_other_hostnames_are_refused():
         assert client.get("/modes", headers={"Host": "evil.example"}).status_code == 200
     finally:
         api_module.app.state.allowed_hosts = allowed
+
+
+# --- custom tools: orchestrator/custom_tools.py is where users add their own ------------------------
+
+
+def test_custom_tools_are_listed_and_callable_by_an_agent():
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from orchestrator.custom_tools import CUSTOM_TOOLS, team_handbook
+
+    listed = {t["id"]: t for t in api_client().get("/tools").json()}
+    assert set(CUSTOM_TOOLS) <= set(listed) and "calc" in listed
+    assert listed["team_handbook"]["source"] == "builtin"
+    assert "Tuesdays" in team_handbook(" Deploys ") and "Tuesdays" in team_handbook("deploy")
+    assert team_handbook("lunch").startswith("error:") and "on-call" in team_handbook("lunch")
+    assert team_handbook("topics") == "Topics: access, deploys, holidays, on-call"
+
+    seen: list[str] = []
+
+    def model_fn(messages, info: AgentInfo) -> ModelResponse:
+        seen[:] = [t.name for t in info.function_tools]
+        returns = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+        if not returns:  # a plain function (no ctx) must attach and run like a built-in
+            return ModelResponse(parts=[ToolCallPart(tool_name="team_handbook", args={"topic": "holidays"})])
+        return ModelResponse(parts=[TextPart(content=returns[0].content)])
+
+    plan = DAGPlan(task="t", nodes=[DAGNode(id="h", goal="when are we closed", tools=["team_handbook", "calc"])])
+    record = RunStore().create("t", plan)
+    asyncio.run(execute_run(record, model=FunctionModel(model_fn)))
+    detail = record.nodes["h"]
+    assert detail.status == NodeStatus.SUCCEEDED and sorted(seen) == ["calc", "team_handbook"]
+    assert detail.tool_calls[0].name == "team_handbook" and "24 December" in detail.output

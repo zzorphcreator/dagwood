@@ -1,7 +1,7 @@
 """Tool registry. Workers receive a subset of these by name.
 
-Add new tools here as plain functions with typed signatures, then register
-them in REGISTRY. Tools run inside the worker's event loop.
+`calc` is the one built-in tool. To add your own, edit custom_tools.py: it has a working
+placeholder and explains the pattern. Tools run inside the worker's event loop.
 """
 
 from __future__ import annotations
@@ -13,23 +13,13 @@ from typing import Any
 
 from pydantic_ai import RunContext
 
+from .custom_tools import CUSTOM_TOOLS
+
 
 @dataclass
 class NodeDeps:
     record: Any  # RunRecord (Any to avoid a circular import)
     node_id: str
-
-
-def add_note(ctx: RunContext[NodeDeps], note: str) -> str:
-    """Save a short note to this step's execution log."""
-    ctx.deps.record.nodes[ctx.deps.node_id].logs.append(f"note: {note}")
-    return "noted"
-
-
-def word_count(ctx: RunContext[NodeDeps], text: str) -> str:
-    """Count words and characters in a piece of text."""
-    words = len(text.split())
-    return f"{words} words, {len(text)} chars"
 
 
 _MATH_FUNCS = {name: getattr(math, name) for name in ("sqrt", "log", "log10", "sin", "cos", "tan", "floor", "ceil", "fabs")}
@@ -114,8 +104,9 @@ def calc(ctx: RunContext[NodeDeps], expression: str) -> str:
         return f"error: {e}"
 
 
+# Built-in tools take the run context as their first argument (`ctx`); custom tools are usually plain
+# functions without it. build_worker in factory.py attaches either kind.
 REGISTRY: dict[str, tuple[Any, str]] = {
-    "add_note": (add_note, "Save a short note to this step's execution log."),
-    "word_count": (word_count, "Count words/chars in text."),
     "calc": (calc, "Evaluate a numeric expression (math subset)."),
+    **CUSTOM_TOOLS,
 }

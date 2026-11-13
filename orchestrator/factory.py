@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import os
 
 from dotenv import load_dotenv
@@ -97,7 +98,10 @@ def build_worker(node: DAGNode, model=None) -> Agent:
             continue
         if name not in REGISTRY:
             raise ValueError(f"unknown tool {name!r} for node {node.id!r}")
-        agent.tool(REGISTRY[name][0])
+        function = REGISTRY[name][0]
+        # A tool whose first parameter is `ctx` receives the run context; any other is a plain function.
+        takes_ctx = next(iter(inspect.signature(function).parameters), None) == "ctx"
+        (agent.tool if takes_ctx else agent.tool_plain)(function)
     return agent
 
 

@@ -105,14 +105,36 @@ export default function ToolsDrawer({ enabled, onClose, onChanged }: Props) {
         <section>
           <h3>Composio catalog</h3>
           {configured === false ? (
-            <p className="muted">
-              Composio isn't configured. Add <code>COMPOSIO_API_KEY</code> to <code>.env</code> and restart the
-              backend.
-            </p>
+            <div className="setup-steps">
+              <p>
+                Optional. Dagwood runs without it, but agents then have only the built-in tools above and no web
+                search. To add search and app toolkits (GitHub, Gmail, …):
+              </p>
+              <ol>
+                <li>
+                  Create a free account at{' '}
+                  <a href="https://dashboard.composio.dev" target="_blank" rel="noopener noreferrer">
+                    dashboard.composio.dev
+                  </a>
+                  .
+                </li>
+                <li>
+                  In your project, open <strong>Settings → API Keys</strong> and copy the key.
+                </li>
+                <li>
+                  Add <code>COMPOSIO_API_KEY=…</code> to <code>.env</code> and restart the backend.
+                </li>
+                <li>Reopen this panel. Composio Search is enabled for you; enable others from the catalog.</li>
+              </ol>
+            </div>
           ) : configured === null ? (
             <p className="muted">Checking…</p>
           ) : (
             <>
+              <p className="muted setup-note">
+                Enable a toolkit to let the planner assign it to agents. Toolkits marked “needs account” ask you to
+                connect that account when you review a plan that uses them (keep “Review plan first” on).
+              </p>
               <input
                 className="drawer-search"
                 value={search}

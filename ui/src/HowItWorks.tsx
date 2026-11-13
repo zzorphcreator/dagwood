@@ -7,8 +7,12 @@ const STEPS = [
     body: 'Type a question or a job, for example “Compare Bitcoin and Ethereum prices this week”.',
   },
   {
+    title: 'You can steer the team (optional)',
+    body: 'Next to the task box, “Agents” asks for a team size and “Agent types” for the kinds of agents you want, for example “researcher, critic” or your own, like “fact checker”. These are hints: the planner follows them where the task allows. Submit the same task with different hints and compare the plans.',
+  },
+  {
     title: 'A planner designs a team of agents',
-    body: 'An AI planner splits the task into steps. Each step becomes an agent (a box on the graph) with its own goal and the tools it may use, such as web search or a calculator. Arrows show which agents need another agent’s results first.',
+    body: 'An AI planner splits the task into steps. Each step becomes an agent (a box on the graph) with its own goal and the tools it may use, such as web search or a calculator. Arrows show which agents need another agent’s results first. The plan is checked automatically, and a plan with problems goes back to the planner to fix.',
   },
   {
     title: 'You review the plan (optional)',
@@ -64,6 +68,12 @@ export function HowItWorksContent() {
         your task, each with one job, and shows you the team as a graph.
       </p>
       <MiniGraph />
+      <p className="hiw-purpose">
+        <strong>Why this exists.</strong> Dagwood is a learning tool, not a product. It is built to show how agents
+        hand work to each other and what the <strong>harness</strong> around them does: the checks that send a bad plan
+        back to the planner, the limits on tools and tokens, the points where a person can step in, and what each step
+        costs. Run small tasks, click everything, and compare what you see with the code.
+      </p>
       <ol className="hiw-steps">
         {STEPS.map((s, i) => (
           <li key={s.title}>

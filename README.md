@@ -48,7 +48,7 @@ by screen, explains what broke during development, and ends with exercises.
 | Run lifecycle | `orchestrator/manager.py` | Background tasks, hard stop, per-user concurrency limit and FIFO queue |
 | Model routing | `orchestrator/models.py` | Planner assigns each agent a tier (light/standard/heavy); a cost mode maps tiers to models |
 | Cost estimates | `orchestrator/estimate.py`, `pricing.py` | Forecast learned from this server's own past runs (median and p90 per agent kind) |
-| Tools | `orchestrator/tools.py`, `catalog.py`, `composio_source.py` | Built-in tools, a pluggable tool catalog, scoped per-agent MCP toolsets, destructive tools blocked |
+| Tools | `orchestrator/tools.py`, `custom_tools.py`, `catalog.py`, `composio_source.py` | A built-in tool, a placeholder for writing your own, a pluggable tool catalog, scoped per-agent MCP toolsets, destructive tools blocked |
 | Live output | `orchestrator/live.py`, `api.py` | pydantic-ai stream events → in-memory feed → SSE |
 | Persistence | `orchestrator/store.py` | Event log + SQLite snapshots; runs survive restarts |
 | Deliverables | `orchestrator/documents.py` | Structured `DocumentSpec` → PDF (WeasyPrint, no network fetches), HTML slides, PPTX; charts dropped unless their numbers appear in the step's input |
@@ -56,7 +56,10 @@ by screen, explains what broke during development, and ends with exercises.
 
 ## Quick start
 
-You need **Python 3.13**, **Node 20.19+ or 22.12+** (required by Vite 8), and a **DeepInfra API key**. That's the only key required.
+You need **Python 3.13**, **Node 20.19+ or 22.12+** (required by Vite 8), and a **DeepInfra API key**
+(create one at [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys)). That's the only
+key required. A Composio key is optional and adds web search and app tools; see
+[below](#optional-web-search-and-app-tools-composio).
 
 ### 1. Backend
 
@@ -102,13 +105,83 @@ a fraction of a cent: a 3-agent run cost $0.0005 at the prices below.
 
 ### Optional: web search and app tools (Composio)
 
-Without `COMPOSIO_API_KEY`, agents only have the built-in tools (`calc`, `word_count`,
-`add_note`). The orchestration still works, but agents answer from model knowledge alone. Add
-a Composio key to `.env` to give agents web search by default, and to attach other toolkits
-(GitHub, Gmail, ...) from the UI's Tools drawer. Tools that Composio marks as destructive are
-blocked unless `COMPOSIO_ALLOW_DESTRUCTIVE=true`. `scripts/check_composio.py` checks your setup.
+**You only need the DeepInfra key to run Dagwood.** Without Composio, agents have two built-in
+tools (`calc` and the example custom tool `team_handbook`) and answer from the model's own knowledge, so anything
+about current events, prices or news may be out of date. The planning, review, execution and cost
+tracking all work the same.
+
+[Composio](https://composio.dev) adds web search and a large catalog of app toolkits (GitHub, Gmail,
+Slack, Notion, ...). It has a free plan; check [its pricing page](https://composio.dev/pricing)
+for current limits.
+
+**1. Create an account and get an API key**
+
+1. Sign up at [dashboard.composio.dev](https://dashboard.composio.dev). A default project is
+   created for you.
+2. Open **Settings → API Keys** in that project and copy the key.
+3. Add it to `.env`:
+
+   ```bash
+   COMPOSIO_API_KEY=your-key-here
+   ```
+
+4. Restart the backend. (`--reload` does not watch `.env`.)
+
+To check the setup without spending anything on models, run `python scripts/check_composio.py`.
+It should list `composio:composio_search` as connected and end with `OK`.
+
+**2. Web search works straight away**
+
+With the key set, the **Tools** button in the top bar shows *Composio Search* under **Enabled**.
+It needs no account, and the planner gives it to any step that needs current information. Try a
+task like "What changed in Python packaging this month?" and look at the search agent's tool calls.
+
+**3. Add more toolkits**
+
+1. Click **Tools**, search the **Composio catalog** (for example `github`), and click **Enable**.
+   Enabling only makes a toolkit available to the planner. It decides per task which agents get it,
+   and you can change that per agent when you review the plan.
+2. Toolkits marked **needs account** act on your behalf, so you must connect an account once.
+   Keep **Review plan first** switched on and submit a task that uses the toolkit. The approval bar
+   then shows "*Gmail* needs a connected account" with a **Connect** link.
+3. **Connect** opens Composio's sign-in page for that app in a new tab. Approve access there, come
+   back, and click **Re-check connections**. Approving the plan is blocked until every toolkit in
+   it is connected. The connection is stored by Composio, so you do this once per app.
+
+Things to know:
+
+- **Enable only what a task needs.** Agents read untrusted text from the web, and a connected
+  toolkit can act on your real accounts.
+- **Destructive tools are blocked.** Anything Composio tags as destructive (deleting things, for
+  example) is hidden from agents unless you set `COMPOSIO_ALLOW_DESTRUCTIVE=true`.
+- **Connections belong to a Composio user id**, `default` unless you set `COMPOSIO_USER_ID`.
+  Change it and you start with no connected accounts.
+- **Tool calls count against your Composio plan**, separately from model costs. Dagwood's cost
+  figures cover models only.
+- To disconnect an app, remove the connected account in the Composio dashboard.
 
 All other settings (models, limits, storage paths) are documented in `.env.example`.
+
+### Write your own tool
+
+`orchestrator/custom_tools.py` is the place to start. It holds one working placeholder,
+`team_handbook`, which answers from a small made-up fact sheet, and its header explains the
+pattern. To see it work, submit:
+
+> When is our team's next deploy window, and who do I ask about access?
+
+The planner gives the tool to an agent, and the agent's tool calls show up in its panel. Then make
+it yours:
+
+1. Write a function with **typed parameters** and a **docstring**. The model reads both to decide
+   when and how to call it. Return a short string.
+2. Add it to `CUSTOM_TOOLS` with a one-line description. The planner reads that line when it
+   decides which agents get the tool.
+3. Restart the backend. The tool appears under **Tools**, and you can add or remove it per agent
+   when you review a plan.
+
+A tool runs with your machine's permissions, with arguments chosen by a model that may have read
+untrusted web pages. Validate what you receive, and read the safety notes in that file first.
 
 ## Limitations: read before you rely on it
 
