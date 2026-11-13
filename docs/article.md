@@ -24,7 +24,7 @@ don't negotiate or hold a group conversation. Each agent receives the *outputs* 
 depends on, and nothing else. If you came here to learn how agents talk to each other, that's the
 answer I'd give you, and the tour shows why I think it's the right starting point.
 
-A note on how it was built: I pair-programmed most of it with Claude Code. I made the design calls
+A note on how it was built: I pair-programmed most of it with an AI coding assistant. I made the design calls
 and tested everything; the AI wrote a lot of the code. More on that at the end.
 
 ## The shape of the thing
@@ -327,6 +327,12 @@ If you clone the repo, these are good ways to learn how the pieces fit:
    wants to use a risky tool, ask the user, then continue or refuse. pydantic-ai's support for
    tools that require approval is a good place to start, and the approval-bar UI is a model for
    the prompt.
+7. **Add a trigger.** Today a run starts only when you submit a task. Make one start on a
+   schedule, or when something changes, like a new email. The tempting design is an agent that
+   keeps polling, but that pays for a model call on every empty check. Write the check as plain
+   code instead, and have it start a run of a plan you already approved, with the event as the
+   input. Because nobody is watching these runs, give each trigger a spend cap and decide what
+   happens when one fires while the last run is still going.
 
 # What I'd tell someone building one of these
 

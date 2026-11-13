@@ -19,8 +19,4 @@ ui/dist/
 # Local scratch and backups
 _scratch/
 
-# Local AI-assistant config
-.claude/
-CLAUDE.md
-CLAUDE.local.md
 *.tar.gz

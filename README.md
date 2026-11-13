@@ -219,6 +219,11 @@ This is a learning project, not a product.
   opened in PowerPoint or LibreOffice during development.
 - **No per-call approval for tools.** Destructive tools are blocked outright, not confirmed
   one call at a time.
+- **No triggers.** A run starts only when you submit a task; nothing runs on a schedule or
+  reacts to an event such as a new email. If you add this, make the trigger plain code that
+  starts a run of an already-approved plan, rather than an agent that keeps polling: a polling
+  agent pays for a model call on every empty check. Unattended runs also need a spend cap and
+  a rule for overlapping runs.
 
 ## Project layout
 
