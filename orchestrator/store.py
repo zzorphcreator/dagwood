@@ -58,6 +58,8 @@ class RunRecord:
         self.planner_usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
         self.estimate: dict | None = None  # cost estimate snapshotted when the plan was approved
         self.deliver = "auto"  # the user's "deliver as" choice: auto / none / pdf / slides / pptx
+        self.agents: int | None = None  # the user's hint for how many agents the planner should use
+        self.agent_types: list[str] = []  # the user's hint for which kinds of agents (roles) to use
         self.live: dict[str, LiveFeed] = {}  # running agents' live output; memory only, never persisted
 
     def totals(self) -> dict[str, float]:
@@ -114,6 +116,8 @@ class RunRecord:
                 "planner_usage": self.planner_usage,
                 "estimate": self.estimate,
                 "deliver": self.deliver,
+                "agents": self.agents,
+                "agent_types": self.agent_types,
                 "nodes": {k: v.model_dump() for k, v in self.nodes.items()},
                 "events": self.events,
                 "created_at": self.created_at,
@@ -136,6 +140,8 @@ class RunRecord:
         record.planner_usage = data.get("planner_usage") or record.planner_usage
         record.estimate = data.get("estimate")
         record.deliver = data.get("deliver", "auto")
+        record.agents = data.get("agents")
+        record.agent_types = data.get("agent_types") or []
         record.nodes = {k: NodeDetail.model_validate(v) for k, v in data["nodes"].items()}
         record.events = data["events"]
         record.created_at = data["created_at"]

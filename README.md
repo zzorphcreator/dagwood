@@ -20,6 +20,23 @@ task ──► planner ──► plan checks ──► human review ──► La
 execution · FastAPI + SSE · SQLite · React + React Flow · models on [DeepInfra](https://deepinfra.com)
 (one API key) · optional tools via [Composio](https://composio.dev).
 
+## Learn from this repo
+
+Dagwood is meant to be read and poked at. If you want to learn how agents pass work to each
+other, where a human can step in, and what drives cost, start with the article
+[Learn how agents work by watching them](docs/article.md). It walks through one real run screen
+by screen, explains what broke during development, and ends with exercises.
+
+![A plan awaiting human approval](docs/images/plan-review.png)
+
+| To learn about | Do this in the UI | Then read |
+| --- | --- | --- |
+| How a task becomes a plan | Submit a task, look at the graph; resubmit with a different **Agents** count or **Agent types** and compare | `factory.py`: planner prompt and validator |
+| Human-in-the-loop | Keep "Review plan first" on; edit, delete, approve or reject steps; press Stop mid-run | `api.py`: `_after_planning`, approve/reject/edit endpoints |
+| How agents communicate | Click a finished agent, open "Inputs from upstream agents" | `executor.py`: `render_prompt`, `clip` |
+| Parallelism and failure | Run a plan with parallel steps; make one fail | `executor.py`: LangGraph edges, skip logic |
+| Cost | Compare the estimate with each agent's run stats | `executor.py`: `agent_limits`; `estimate.py` |
+
 ## What's in here
 
 | Concern | Where | What to look at |
@@ -78,7 +95,9 @@ npm install
 npm run dev                                     # UI on http://localhost:5173
 ```
 
-Open http://localhost:5173 and type a task. Try **Economy** mode first. Typical runs there cost
+Open http://localhost:5173 and type a task. Try **Economy** mode first. To steer the planner,
+set **Agents** (how many) and **Agent types** (for example `researcher, critic`, or your own like
+`fact checker`). Both are optional hints: the planner follows them where the task allows. Typical runs there cost
 a fraction of a cent: a 3-agent run cost $0.0005 at the prices below.
 
 ### Optional: web search and app tools (Composio)
@@ -96,7 +115,9 @@ All other settings (models, limits, storage paths) are documented in `.env.examp
 This is a learning project, not a product.
 
 - **Local only, no auth.** Every request is treated as the same user (`_current_user()` in
-  `orchestrator/api.py` is where auth would go). Don't expose the server to a network.
+  `orchestrator/api.py` is where auth would go). Don't expose the server to a network. The API
+  refuses requests whose `Host` header isn't localhost (`ORCHESTRATOR_ALLOWED_HOSTS`), which stops
+  web pages from reaching it through DNS rebinding. It is not a substitute for auth.
 - **Run data is stored in plain text.** `runs.db` holds your prompts and every agent's output,
   and `artifacts/` holds generated files. Both are git-ignored. Keep it that way.
 - **Prices are dated.** Model prices in `orchestrator/models.py` were checked on 2026-10-09
@@ -129,6 +150,11 @@ tests/          pytest suite (no network)
 scripts/        live integration checks
 ui/             React + Vite front end
 ```
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), and
+[SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 

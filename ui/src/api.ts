@@ -63,6 +63,8 @@ export interface RunSummary {
   model: string; // the planner's model; every agent's when mode is null
   mode: string | null; // cost mode routing agents by tier; null = one model for all agents
   deliver?: DeliverOption;
+  agents?: number | null; // the submitter's hint for how many agents to plan
+  agent_types?: string[]; // ...and which kinds (used as roles)
   error: string | null; // run-level failure, e.g. the planner failed
   queue_position: number | null; // 1-based place in line when queued
   planner: { input_tokens: number; output_tokens: number; cost_usd: number };
@@ -118,16 +120,43 @@ async function ok(res: Response): Promise<unknown> {
 /** How a run picks agent models: a cost mode (route by tier) or one model for everything. */
 export type Routing = { mode: string } | { model: string };
 
+/** Optional planner hints: how many agents, and which kinds. The planner follows them where the task allows. */
+export interface TeamHint {
+  agents?: number;
+  agent_types?: string[];
+}
+export const MAX_AGENTS_HINT = 12;
+export const MAX_AGENT_TYPES = 6;
+const AGENT_TYPE = /^[A-Za-z][A-Za-z0-9 _-]{0,29}$/;
+
+/** Parse "researcher, fact checker" into types; `error` explains what the server would reject. */
+export function parseAgentTypes(text: string): { types: string[]; error: string | null } {
+  const seen = new Map<string, string>();
+  for (const raw of text.split(',')) {
+    const t = raw.trim();
+    if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  }
+  const types = [...seen.values()];
+  const bad = types.find((t) => !AGENT_TYPE.test(t));
+  const error = bad
+    ? `"${bad.length > 24 ? `${bad.slice(0, 24)}…` : bad}" is not a valid agent type: use up to 30 letters, digits, spaces or hyphens, starting with a letter`
+    : types.length > MAX_AGENT_TYPES
+      ? `At most ${MAX_AGENT_TYPES} agent types`
+      : null;
+  return { types, error };
+}
+
 export async function submitTask(
   task: string,
   requireApproval: boolean,
   routing: Routing | null,
   deliver: DeliverOption = 'auto',
+  team: TeamHint = {},
 ): Promise<{ run_id: string }> {
   const res = await fetch('/tasks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, require_approval: requireApproval, deliver, ...(routing ?? {}) }),
+    body: JSON.stringify({ task, require_approval: requireApproval, deliver, ...team, ...(routing ?? {}) }),
   });
   return (await ok(res)) as { run_id: string };
 }

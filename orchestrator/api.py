@@ -10,8 +10,8 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from .catalog import BUILTIN, Catalog, split_id
 from .composio_source import ComposioSource
@@ -19,10 +19,10 @@ from .estimate import estimate_plan
 from .executor import Runner, agent_limits, close_cancelled, execute_run, extract_usage, run_totals
 from .live import live_ops
 from .documents import files_dir
-from .factory import apply_delivery, build_supervisor, get_model, plan_problems
+from .factory import MAX_AGENTS_HINT, apply_delivery, build_supervisor, get_model, plan_problems
 from .pricing import estimate_cost
 from .manager import RunManager
-from typing import Literal
+from typing import Annotated, Literal
 
 from .models import DEFAULT_MODE, MODES, as_dicts, get_info, modes_as_dicts
 from .schema import DAGPlan, NodeStatus, RunStatus
@@ -46,6 +46,41 @@ app.state.runner: Runner | None = None  # test/dev override, bypasses the LLM
 app.state.planner_model = None  # test/dev override for the supervisor's model
 app.state.manager = RunManager()
 
+# Hostnames this server answers to. There is no auth, so a web page that re-points its own domain at
+# 127.0.0.1 (DNS rebinding) could otherwise read run history and submit tasks; its requests still
+# carry the page's hostname in Host, which is refused here. "*" allows any host.
+DEFAULT_ALLOWED_HOSTS = "localhost,127.0.0.1,::1"
+app.state.allowed_hosts = {
+    h.strip().lower().strip("[]")
+    for h in os.environ.get("ORCHESTRATOR_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS).split(",")
+    if h.strip()
+}
+
+
+def _hostname(host: str) -> str:
+    """The Host header without its port: "localhost:8000" -> "localhost", "[::1]:8000" -> "::1"."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[1:].split("]", 1)[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+@app.middleware("http")
+async def check_host(request: Request, call_next):
+    allowed = app.state.allowed_hosts
+    if "*" not in allowed and _hostname(request.headers.get("host", "")) not in allowed:
+        return PlainTextResponse(
+            "Host not allowed. Dagwood answers only to localhost; see ORCHESTRATOR_ALLOWED_HOSTS in .env.example.",
+            status_code=400,
+        )
+    return await call_next(request)
+
+
+# A kind of agent the user asks for, used as a step's role ("researcher", "fact checker").
+AgentType = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=30, pattern=r"^[A-Za-z][A-Za-z0-9 _-]*$")
+]
+
 
 class TaskRequest(BaseModel):
     task: str
@@ -56,6 +91,18 @@ class TaskRequest(BaseModel):
     # auto: the planner adds a publishing step when the task asks for a file; none: text only;
     # pdf / slides / pptx: always end with a publishing step producing that file
     deliver: Literal["auto", "none", "pdf", "slides", "pptx"] = "auto"
+    # Optional hints for the planner (ignored with an injected plan): how many agents the plan should
+    # have, and which kinds. The planner follows them where the task allows; neither is enforced.
+    agents: int | None = Field(default=None, ge=1, le=MAX_AGENTS_HINT)
+    agent_types: list[AgentType] = Field(default_factory=list, max_length=6)
+
+    @field_validator("agent_types")
+    @classmethod
+    def _unique_types(cls, types: list[str]) -> list[str]:
+        seen: dict[str, str] = {}
+        for t in types:
+            seen.setdefault(t.lower(), t)
+        return list(seen.values())
 
 
 class TaskResponse(BaseModel):
@@ -131,7 +178,9 @@ def _after_planning(record: RunRecord, require_approval: bool) -> None:
 async def _plan_run(record: RunRecord, require_approval: bool) -> None:
     try:
         model = app.state.planner_model or get_model(record.model)
-        supervisor = build_supervisor(_catalog(), model=model, deliver=record.deliver)
+        supervisor = build_supervisor(
+            _catalog(), model=model, deliver=record.deliver, agents=record.agents, agent_types=record.agent_types
+        )
         result = await supervisor.run(f"Task: {record.task}\nReturn the DAG plan.")
         tokens_in, tokens_out = extract_usage(result)
         record.planner_usage = {
@@ -182,6 +231,7 @@ async def submit_task(req: TaskRequest):
             req.task, DAGPlan(task=req.task, nodes=[]), owner=_current_user(), model=model, mode=mode
         )
         record.deliver = req.deliver
+        record.agents, record.agent_types = req.agents, req.agent_types
         record.status = RunStatus.PLANNING
         record.emit("planning_started")
         _manager().plan(record, _plan_run(record, req.require_approval))
@@ -429,6 +479,8 @@ async def get_run(run_id: str):
         "model": record.model,
         "mode": record.mode,
         "deliver": record.deliver,
+        "agents": record.agents,
+        "agent_types": record.agent_types,
         "error": record.error,
         "queue_position": _manager().position(record.run_id),
         "created_at": record.created_at,

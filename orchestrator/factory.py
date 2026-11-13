@@ -146,7 +146,42 @@ def apply_delivery(plan: DAGPlan, deliver: str) -> DAGPlan:
     return plan.model_copy(update={"nodes": [*nodes, publish]})
 
 
-def supervisor_prompt(catalog: Catalog, deliver: str = "auto") -> str:
+MAX_AGENTS_HINT = 12  # largest team size a user may ask the planner for
+
+
+def planned_size(plan: DAGPlan, deliver: str) -> int:
+    """How many agents the run will have once the "deliver as" choice is applied to this plan."""
+    return len(apply_delivery(plan, deliver).nodes)
+
+
+def _role_rule(agent_types: list[str]) -> str:
+    if not agent_types:
+        return "- role: researcher, coder, critic, or worker.\n"
+    return (
+        f"- role: the user asked for these kinds of agents: {', '.join(agent_types)}. Give every step one of "
+        "these as its role, shape each step's goal and instructions to suit its role, and use each kind at "
+        "least once when the number of steps allows. A kind may be used by several steps.\n"
+    )
+
+
+def _size_rule(deliver: str, agents: int | None) -> str:
+    if agents is None:
+        return "- Keep it small: 2-6 nodes unless the task clearly needs more.\n"
+    if deliver in FORMATS:  # the publishing step is appended after planning and counts as one agent
+        steps = max(agents - 1, 1)
+        return (
+            f"- The user asked for {agents} agent{'s' if agents != 1 else ''}, and the publishing step added "
+            f"automatically is one of them: plan exactly {steps} step{'s' if steps != 1 else ''}.\n"
+        )
+    return (
+        f"- The user asked for {agents} agent{'s' if agents != 1 else ''}: plan exactly {agents} "
+        f"step{'s' if agents != 1 else ''}, splitting or merging work to fit.\n"
+    )
+
+
+def supervisor_prompt(
+    catalog: Catalog, deliver: str = "auto", agents: int | None = None, agent_types: list[str] | None = None
+) -> str:
     tools = "\n".join(f"- {t.id}: {t.description}" for t in catalog.enabled())
     return (
         "You are the supervisor of a multi-agent workflow engine.\n"
@@ -156,7 +191,7 @@ def supervisor_prompt(catalog: Catalog, deliver: str = "auto") -> str:
         "- depends_on lists ids that must finish first. No cycles. Each step only sees the outputs of the "
         "steps listed in its depends_on, so any step that analyses, combines, summarises or builds on earlier "
         "results must list those steps; leave it empty only for steps that need nothing from the others.\n"
-        "- role: researcher, coder, critic, or worker.\n"
+        f"{_role_rule(agent_types or [])}"
         "- goal: one concrete deliverable for that step.\n"
         "- instructions: extra guidance for the worker (may be empty).\n"
         "- tools: ids from the list below (may be empty); give each step only what it needs:\n"
@@ -170,7 +205,7 @@ def supervisor_prompt(catalog: Catalog, deliver: str = "auto") -> str:
         f"- Today's date is {_today()}. Your knowledge and the workers' may be out of date. Any step that "
         "needs current or real-time information (prices, market data, news, recent events, anything "
         "'latest' or 'now') must be given a search or web toolkit from the list above, if one exists.\n"
-        "- Keep it small: 2-6 nodes unless the task clearly needs more.\n"
+        f"{_size_rule(deliver, agents)}"
         "Return only the plan."
     )
 
@@ -198,10 +233,18 @@ def plan_problems(plan: DAGPlan, catalog: Catalog) -> list[str]:
     return problems
 
 
-def build_supervisor(catalog: Catalog, model=None, deliver: str = "auto") -> Agent:
+def build_supervisor(
+    catalog: Catalog,
+    model=None,
+    deliver: str = "auto",
+    agents: int | None = None,
+    agent_types: list[str] | None = None,
+) -> Agent:
+    """The planner. `agents` and `agent_types` are the user's optional hints for the team's size and
+    roles: they shape the prompt, and a plan of the wrong size is sent back once, never rejected."""
     agent: Agent = Agent(
         model or get_model(),
-        instructions=supervisor_prompt(catalog, deliver),
+        instructions=supervisor_prompt(catalog, deliver, agents, agent_types),
         output_type=DAGPlan,
         retries={"output": 3},  # room for the planner to correct invented tool ids
     )
@@ -219,6 +262,16 @@ def build_supervisor(catalog: Catalog, model=None, deliver: str = "auto") -> Age
                 "uses earlier results (analysis, synthesis, summary), add those ids to its depends_on. If every "
                 "step is truly independent, return the same plan again"
             )
+        # The size hint is a preference: ask once, then take what the planner thinks the task needs.
+        if not problems and agents is not None and ctx.retry == 0:
+            size = planned_size(plan, deliver)
+            wanted = max(agents, 2) if deliver in FORMATS else agents
+            if size != wanted:
+                extra = " (counting the publishing step added automatically)" if deliver in FORMATS else ""
+                problems.append(
+                    f"the user asked for {agents} agents but this plan would have {size}{extra}. Split or merge "
+                    f"steps so it has {wanted}. If the task cannot be done well that way, return the same plan again"
+                )
         if problems:
             raise ModelRetry("Fix these problems and return the plan again: " + "; ".join(problems))
         return plan

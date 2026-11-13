@@ -1,4 +1,4 @@
-# Pinned to the versions the test suite was last run against (2026-11-05, Python 3.13).
+# Pinned to the versions the test suite was last run against (2026-11-12, Python 3.13).
 # Newer versions will probably work, but these are known-good.
 
 # Agents, graph execution, API
@@ -11,7 +11,7 @@ openai==3.26.1
 
 # Tools: Composio (optional at runtime, only used when COMPOSIO_API_KEY is set) and MCP
 composio==0.22.0
-fastmcp==4.1.0
+fastmcp==4.1.2
 
 # Deliverables (PDF / slides / PPTX)
 markdown-it-py==4.2.0

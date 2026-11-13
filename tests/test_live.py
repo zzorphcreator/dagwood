@@ -227,7 +227,7 @@ def test_stream_sends_live_events_for_running_agents(monkeypatch):
     record.nodes["w"].status = NodeStatus.RUNNING
     record.live["w"] = feed_with(PartStartEvent(index=0, part=TextPart(content="drafting…")))
 
-    with TestClient(api_module.app) as client:
+    with TestClient(api_module.app, base_url="http://localhost") as client:
         body = client.get(f"/runs/{record.run_id}/stream").text
 
     blocks = [b for b in body.split("\n\n") if b.startswith("event: live")]

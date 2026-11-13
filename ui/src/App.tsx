@@ -28,6 +28,8 @@ import {
   listRuns,
   listSources,
   listTools,
+  MAX_AGENTS_HINT,
+  parseAgentTypes,
   setRunRouting,
   submitTask,
   type NodeEdit,
@@ -114,6 +116,10 @@ export default function App() {
       // choice just won't be remembered
     }
   };
+  // Optional planner hints, per session: '' = let the planner decide.
+  const [agentCount, setAgentCount] = useState('');
+  const [agentTypes, setAgentTypes] = useState('');
+  const parsedTypes = useMemo(() => parseAgentTypes(agentTypes), [agentTypes]);
   const [sources, setSources] = useState<string[]>([]);
   const [focusFrom, setFocusFrom] = useState<string | null>(null);
   // Running agents' live output, fed by "live" stream events; transient, so it resets with the run.
@@ -311,11 +317,14 @@ export default function App() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!taskInput.trim() || submitting) return;
+    if (!taskInput.trim() || submitting || parsedTypes.error) return;
     setSubmitting(true);
     setError(null);
     try {
-      const { run_id } = await submitTask(taskInput.trim(), requireApproval, chosenRouting, deliver);
+      const { run_id } = await submitTask(taskInput.trim(), requireApproval, chosenRouting, deliver, {
+        ...(agentCount ? { agents: Number(agentCount) } : {}),
+        ...(parsedTypes.types.length ? { agent_types: parsedTypes.types } : {}),
+      });
       setRuns((prev) => [
         {
           id: run_id,
@@ -502,7 +511,7 @@ export default function App() {
             placeholder="Describe a task for the agents…"
             aria-label="Task"
           />
-          <button type="submit" className="run-button" disabled={submitting || !taskInput.trim()}>
+          <button type="submit" className="run-button" disabled={submitting || !taskInput.trim() || !!parsedTypes.error}>
             <ArrowUp size={16} strokeWidth={2.5} />
             <span>{submitting ? 'Planning…' : 'Run'}</span>
           </button>
@@ -534,6 +543,35 @@ export default function App() {
               ))}
             </select>
           </label>
+          <label className="option agents-count">
+            <span>Agents</span>
+            <select
+              value={agentCount}
+              onChange={(e) => setAgentCount(e.target.value)}
+              title="Optional hint: how many agents the plan should have. The planner follows it where the task allows."
+            >
+              <option value="">Auto</option>
+              {Array.from({ length: MAX_AGENTS_HINT }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {i + 1}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="option agents-types">
+            <span>Agent types</span>
+            <input
+              type="text"
+              value={agentTypes}
+              onChange={(e) => setAgentTypes(e.target.value)}
+              placeholder="Any, or e.g. researcher, critic"
+              aria-invalid={!!parsedTypes.error}
+              title={
+                parsedTypes.error ??
+                'Optional hint: kinds of agents to use, separated by commas (researcher, coder, critic, or your own, like "fact checker"). They become the agents\' roles.'
+              }
+            />
+          </label>
           <label className="switch">
             <input
               type="checkbox"
@@ -553,6 +591,7 @@ export default function App() {
           </label>
         </div>
       </form>
+      {parsedTypes.error && <div className="banner error">{parsedTypes.error}</div>}
       {error && <div className="banner error">{error}</div>}
       {noExternalEnabled && (
         <div className="banner hint">
@@ -594,6 +633,19 @@ export default function App() {
                   <dt>{summary.mode ? 'Mode' : 'Model'}</dt>
                   <dd>{runRoutingLabel(summary.mode, summary.model)}</dd>
                 </div>
+                {(summary.agents || !!summary.agent_types?.length) && (
+                  <div title="What you asked the planner for. A hint: the plan may differ where the task needs it.">
+                    <dt>Asked for</dt>
+                    <dd>
+                      {[
+                        summary.agents ? `${summary.agents} agent${summary.agents === 1 ? '' : 's'}` : null,
+                        summary.agent_types?.join(', ') || null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </dd>
+                  </div>
+                )}
                 <div className="run-id">
                   <dt>Run</dt>
                   <dd className="mono">{summary.run_id}</dd>

@@ -466,6 +466,33 @@ select:hover:not(:disabled) {
   width: 130px;
 }
 
+.composer .option.agents-count select {
+  width: 76px;
+}
+
+.composer .option.agents-types input {
+  width: 210px;
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.composer .option.agents-types input::placeholder {
+  color: var(--ink-3);
+}
+
+.composer .option.agents-types input:hover {
+  border-color: var(--ink-3);
+}
+
+.composer .option input[aria-invalid='true'] {
+  border-color: var(--st-fail);
+}
+
 /* toggle switch built on a real checkbox */
 .switch {
   position: relative;
@@ -2023,6 +2050,9 @@ button.small:disabled {
   }
 
   .composer .option select,
+  .composer .option input,
+  .composer .option.agents-count select,
+  .composer .option.agents-types input,
   .composer .option:nth-child(2) select,
   .approval-controls .option select {
     width: 100%;
