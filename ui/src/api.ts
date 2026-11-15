@@ -59,6 +59,39 @@ export interface InputRecord {
   original_chars: number;
 }
 
+/** After-run comparison of the split run against doing it all in one go. Time and context are
+ * measured; cost is a guess (another model would use different token counts) and is worded as one. */
+export interface SplitSummary {
+  agents: number;
+  time: { agent_seconds: number; wall_seconds: number };
+  context: { largest_handoff_chars: number; output_chars: number };
+  cost: {
+    actual_usd: number;
+    frontier_low_usd: number;
+    frontier_high_usd: number;
+    frontier_models: string[];
+    prices_checked: string;
+  } | null;
+}
+
+/** Headline figures of one run, for a split run and its single-agent baseline side by side. */
+export interface RunBrief {
+  run_id: string;
+  status: string;
+  agents: number;
+  model: string;
+  mode: string | null;
+  total_cost_usd: number;
+  seconds: number | null; // first agent start to last agent end; null until an agent has finished
+  error: string | null;
+}
+
+export interface RunCompare {
+  viewing: 'split' | 'single'; // which of the two this run is
+  split: RunBrief;
+  single: RunBrief;
+}
+
 export interface RunSummary {
   run_id: string;
   task: string;
@@ -72,6 +105,8 @@ export interface RunSummary {
   queue_position: number | null; // 1-based place in line when queued
   planner: { input_tokens: number; output_tokens: number; cost_usd: number };
   estimate: CostEstimate | null; // forecast snapshotted when the plan was approved
+  split?: SplitSummary | null; // what splitting the task bought; set once a run with 2+ agents has ended
+  compare?: RunCompare | null; // this run next to its single-agent baseline (or the split run it re-does)
   created_at: number;
   total_input_tokens: number;
   total_output_tokens: number;
@@ -162,6 +197,11 @@ export async function submitTask(
     body: JSON.stringify({ task, require_approval: requireApproval, deliver, ...team, ...(routing ?? {}) }),
   });
   return (await ok(res)) as { run_id: string };
+}
+
+/** Start the same task as one agent on the strongest listed model. The new run waits for approval. */
+export async function startBaseline(runId: string): Promise<{ run_id: string }> {
+  return (await ok(await fetch(`/runs/${runId}/baseline`, { method: 'POST' }))) as { run_id: string };
 }
 
 export async function decideRun(runId: string, decision: 'approve' | 'reject'): Promise<void> {

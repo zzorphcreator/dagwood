@@ -11,7 +11,7 @@ I built **Dagwood** to make those parts visible. You give it a task. A planner m
 a graph of worker agents. You review and edit that plan before anything runs. Then you watch the
 agents work, live, and can click any of them to see exactly what it was given and what it produced.
 
-It's small on purpose: about 9,000 lines of Python and TypeScript, with 148 tests that run without
+It's small on purpose: about 9,000 lines of Python and TypeScript, with 153 tests that run without
 API keys. A typical run costs well under a cent. The code is at
 [github.com/zzorphcreator/dagwood](https://github.com/zzorphcreator/dagwood).
 
@@ -304,6 +304,57 @@ are told today's date, and anything "latest" must use search. And the cost estim
 about its limits: it runs low for synthesis steps, which it prices at a flat ~4k input tokens,
 and the README says so.
 
+# Why not one big model?
+
+It's a fair question, and I don't think the answer is "because many agents give better answers".
+A single frontier model with all the tools will handle most of the tasks I gave Dagwood, and on a
+small or tightly connected task it will often do better, because nothing is lost in a handoff.
+
+What the split buys is different:
+
+- **You see the plan before you pay for it**, and you can change it. One model's plan stays
+  inside its reasoning.
+- **Cheap models can do the narrow steps.** Fetching and reformatting don't need the strongest
+  model, and the harder steps can still get one.
+- **Each agent reads a small, chosen context** instead of everything so far.
+- **Independent steps run side by side.**
+- **A failure has an address.** One agent hits its limit and you know which one, why, and what
+  was skipped because of it.
+- **Tools are handed out per step.** The agent that summarises never holds the tool that sends
+  email.
+- **You can audit it.** A wrong number traces back to one step and the input it was given.
+- **You aren't tied to one model.** More on that below.
+
+After a run, a strip under the run header called "What the split bought" puts numbers on some of
+this: how long the agents worked in total against how long the run took, and the most text any
+one agent was handed against everything the agents wrote. Both are measured from the run.
+
+The strip also shows a cost line, and that one needs care. It takes the run's token counts and
+prices them at other providers' flagship rates, as a loose range. Nobody ran those models. A
+different model would read and write a different amount, and one agent doing the whole task
+wouldn't make the same calls, so the true figure could sit well outside the range. I'd read it as
+"likely a different order of magnitude" and nothing more precise than that.
+
+If you want a real comparison, run one. The strip has a **Run it as one agent** link that starts
+the same task again as a single agent holding every tool the plan used, on the strongest model in
+the list, and then shows both runs side by side. On a small explain-and-compare task with no
+tools, both on the same cheap model, four agents cost $0.0008 and finished in 9 seconds; one
+agent cost $0.0004 and took 44. The split was faster and the single agent was cheaper. That is
+one run each, so it proves nothing general, which is the point of exercise 8.
+
+**Then there are outages.** If one model does everything, then that model being
+slow, rate-limited, deprecated or down stops all of your work at once. Moving to another model
+means re-testing everything, because the whole task was shaped around the first one. When the
+work is already cut into steps with typed inputs and outputs, moving a step to a different model
+is a setting, and you can test that one step on its own. Dagwood only gets part of the way: you
+can switch mode or pin a model per agent, but every model it runs comes from one provider, so an
+outage there still stops everything, and nothing fails over by itself. A second provider would be
+the next step.
+
+So when is one model the better choice? When the task is small, when every part depends on every
+other part, or when you want the best answer and don't need to see, steer or cap how it was
+reached.
+
 # Things to try
 
 If you clone the repo, these are good ways to learn how the pieces fit:
@@ -333,6 +384,13 @@ If you clone the repo, these are good ways to learn how the pieces fit:
    code instead, and have it start a run of a plan you already approved, with the event as the
    input. Because nobody is watching these runs, give each trigger a spend cap and decide what
    happens when one fires while the last run is still going.
+
+8. **Race one big model.** Finish a run, open "What the split bought" under the run title and
+   click **Run it as one agent**. Approve the new run (it shows an estimate first, and you can
+   pick a cheaper model there). Then compare the two: cost, time, the answers themselves, and how
+   easy each run is to debug when something in the answer looks wrong. Sometimes the single agent
+   wins. Work out why. Try it on a task with search too: the single agent gets the same tool-call
+   and token limits as any other agent, so see whether it runs out.
 
 # What I'd tell someone building one of these
 

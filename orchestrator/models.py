@@ -62,6 +62,7 @@ class ComparisonModel:
     input_per_1m: float
     output_per_1m: float
     note: str
+    flagship: bool = False  # the provider's top model; the after-run "one frontier model" price range uses these
 
 
 # Standard (uncached, short-prompt) rates, cheap -> flagship per provider, checked 2026-10-12:
@@ -74,12 +75,12 @@ COMPARISON_PRICES_CHECKED = "2026-10-12"
 COMPARISON_MODELS: list[ComparisonModel] = [
     ComparisonModel("claude-haiku-5-5", "Anthropic", "Claude Haiku 5.5", 0.10, 0.50, "Prompts over 100K: $0.50/$2.50."),
     ComparisonModel("claude-sonnet-5-5", "Anthropic", "Claude Sonnet 5.5", 2.00, 10.00, "Mid tier."),
-    ComparisonModel("claude-opus-5-5", "Anthropic", "Claude Opus 5.5", 4.00, 20.00, "Flagship."),
+    ComparisonModel("claude-opus-5-5", "Anthropic", "Claude Opus 5.5", 4.00, 20.00, "Flagship.", flagship=True),
     ComparisonModel("gpt-6-luna", "OpenAI", "GPT-6 Luna", 0.10, 0.50, "Prompts over 272K: $0.20/$0.75."),
     ComparisonModel("gpt-6.1-sol", "OpenAI", "GPT-6.1 Sol", 2.00, 10.00, "Prompts over 272K: $4/$15."),
-    ComparisonModel("gpt-6-astra", "OpenAI", "GPT-6 Astra", 10.00, 50.00, "Flagship. Prompts over 272K: $20/$75."),
+    ComparisonModel("gpt-6-astra", "OpenAI", "GPT-6 Astra", 10.00, 50.00, "Flagship. Prompts over 272K: $20/$75.", flagship=True),
     ComparisonModel("grok-4.3", "xAI", "Grok 4.3", 1.25, 2.50, "Prompts of 200K+: $2.50/$5."),
-    ComparisonModel("grok-4.7", "xAI", "Grok 4.7", 2.00, 6.00, "Flagship. Prompts of 200K+: $4/$12."),
+    ComparisonModel("grok-4.7", "xAI", "Grok 4.7", 2.00, 6.00, "Flagship. Prompts of 200K+: $4/$12.", flagship=True),
     ComparisonModel(
         "gemini-3.1-flash-lite", "Google", "Gemini 3.1 Flash-Lite", 0.25, 1.50, "Cheapest current Gemini."
     ),
@@ -87,7 +88,7 @@ COMPARISON_MODELS: list[ComparisonModel] = [
         "gemini-3.8-flash", "Google", "Gemini 3.8 Flash", 0.75, 3.75, "Introductory; $1.50/$7.50 from 2027-01-01."
     ),
     ComparisonModel(
-        "gemini-3.1-pro-preview", "Google", "Gemini 3.1 Pro (Preview)", 2.00, 12.00, "Prompts over 200K: $4/$18."
+        "gemini-3.1-pro-preview", "Google", "Gemini 3.1 Pro (Preview)", 2.00, 12.00, "Prompts over 200K: $4/$18.", flagship=True
     ),
 ]
 

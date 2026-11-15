@@ -60,6 +60,10 @@ class RunRecord:
         self.deliver = "auto"  # the user's "deliver as" choice: auto / none / pdf / slides / pptx
         self.agents: int | None = None  # the user's hint for how many agents the planner should use
         self.agent_types: list[str] = []  # the user's hint for which kinds of agents (roles) to use
+        # A single-agent baseline run points at the split run it re-does (baseline_of); that run
+        # points back at its latest baseline (baseline_id), so each can show the other's figures.
+        self.baseline_of: str | None = None
+        self.baseline_id: str | None = None
         self.live: dict[str, LiveFeed] = {}  # running agents' live output; memory only, never persisted
 
     def totals(self) -> dict[str, float]:
@@ -118,6 +122,8 @@ class RunRecord:
                 "deliver": self.deliver,
                 "agents": self.agents,
                 "agent_types": self.agent_types,
+                "baseline_of": self.baseline_of,
+                "baseline_id": self.baseline_id,
                 "nodes": {k: v.model_dump() for k, v in self.nodes.items()},
                 "events": self.events,
                 "created_at": self.created_at,
@@ -142,6 +148,8 @@ class RunRecord:
         record.deliver = data.get("deliver", "auto")
         record.agents = data.get("agents")
         record.agent_types = data.get("agent_types") or []
+        record.baseline_of = data.get("baseline_of")
+        record.baseline_id = data.get("baseline_id")
         record.nodes = {k: NodeDetail.model_validate(v) for k, v in data["nodes"].items()}
         record.events = data["events"]
         record.created_at = data["created_at"]

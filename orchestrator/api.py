@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -26,6 +27,7 @@ from typing import Annotated, Literal
 
 from .models import DEFAULT_MODE, MODES, as_dicts, get_info, modes_as_dicts
 from .schema import DAGPlan, NodeStatus, RunStatus
+from .split import baseline_model, baseline_plan, run_brief, split_summary
 from .store import RunRecord, RunStore, mark_interrupted
 
 
@@ -36,6 +38,22 @@ async def lifespan(app: FastAPI):
         app.state.manager.submit(record, _launch)
     yield
 
+
+class QuietPolling(logging.Filter):
+    """Keep the UI's run-list poll (GET /runs every 3 seconds) out of the access log.
+
+    Everything else still shows, including that same request when it fails, so the terminal
+    reads as a record of what you did rather than a wall of identical lines.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args  # uvicorn: (client, method, path, http_version, status)
+        if not isinstance(args, tuple) or len(args) != 5:
+            return True
+        return not (args[1] == "GET" and args[2] == "/runs" and args[4] == 200)
+
+
+logging.getLogger("uvicorn.access").addFilter(QuietPolling())
 
 app = FastAPI(title="Dagwood", lifespan=lifespan)
 DB_PATH = os.environ.get("ORCHESTRATOR_DB", "runs.db")
@@ -256,6 +274,40 @@ async def approve_run(run_id: str):
     record.emit("plan_approved")
     _manager().submit(record, _launch)  # may queue behind the user's other runs
     return {"run_id": run_id, "status": record.status.value}
+
+
+@app.post("/runs/{run_id}/baseline", response_model=TaskResponse)
+async def baseline_run(run_id: str):
+    """Start the same task as ONE agent on the strongest listed model, to compare with this split run.
+
+    The new run always waits for approval: it uses a premium model, so the reviewer sees the
+    estimate (and can pick another model) before anything is spent.
+    """
+    record = _store().get(run_id)
+    if record is None:
+        raise HTTPException(404, "unknown run")
+    if record.baseline_of:
+        raise HTTPException(409, "this run is already a single-agent baseline")
+    if not record.status.terminal or len(record.plan.nodes) < 2:
+        raise HTTPException(409, "a baseline needs a finished run with at least two agents")
+    plan = baseline_plan(record)
+    _validate_plan(plan)  # a toolkit the split run used may have been disabled since
+    solo = _store().create(record.task, plan, owner=_current_user(), model=baseline_model(), mode=None)
+    solo.deliver = "none"
+    solo.baseline_of = record.run_id
+    _after_planning(solo, require_approval=True)
+    record.baseline_id = solo.run_id
+    record.emit("baseline_started", data={"run_id": solo.run_id})  # also saves the link
+    return TaskResponse(run_id=solo.run_id)
+
+
+def _compare(record: RunRecord) -> dict | None:
+    """A split run and its single-agent baseline, whichever of the two is being looked at."""
+    other = _store().get(record.baseline_of or record.baseline_id or "")
+    if other is None:
+        return None
+    split, single = (other, record) if record.baseline_of else (record, other)
+    return {"viewing": "single" if record.baseline_of else "split", "split": run_brief(split), "single": run_brief(single)}
 
 
 def _estimate(record: RunRecord) -> dict:
@@ -486,6 +538,8 @@ async def get_run(run_id: str):
         "created_at": record.created_at,
         "planner": record.planner_usage,
         "estimate": record.estimate,
+        "split": split_summary(record),
+        "compare": _compare(record),
         **run_totals(record),
         "nodes": [
             {

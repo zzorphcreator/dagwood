@@ -2326,3 +2326,129 @@ def test_finished_run_exports_its_final_answer_as_pdf():
     assert "<script>" not in html and "<strong>bold</strong>" in html and "<b>t</b>" not in html
     assert html.count("<h2>") == 2 and "<table>" in html
     assert "<h2>" not in answer_html("t", "s", [("only", "text")], [])
+
+
+def test_access_log_hides_only_the_successful_run_list_poll():
+    import logging
+
+    from orchestrator.api import QuietPolling
+
+    def shown(method: str, path: str, status: int) -> bool:
+        record = logging.LogRecord(
+            "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+            ("127.0.0.1:5", method, path, "1.1", status), None,
+        )
+        return QuietPolling().filter(record)
+
+    assert not shown("GET", "/runs", 200)
+    assert shown("GET", "/runs", 500)
+    assert shown("GET", "/runs/abc123", 200)
+    assert shown("POST", "/tasks", 200)
+    other = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "plain message", None, None)
+    assert QuietPolling().filter(other)
+
+
+
+def test_split_summary_reports_time_context_and_a_flagship_price_range():
+    from orchestrator.models import COMPARISON_MODELS
+    from orchestrator.schema import InputRecord
+    from orchestrator.split import split_summary
+
+    record = RunStore().create("t", diamond_plan())
+    assert split_summary(record) is None  # not finished yet
+    # a at 0-10s, b and c side by side at 10-30s, d at 30-35s
+    spans = {"a": (0, 10), "b": (10, 30), "c": (10, 30), "d": (30, 35)}
+    for node_id, (start, end) in spans.items():
+        detail = record.nodes[node_id]
+        detail.status, detail.started_at, detail.ended_at = NodeStatus.SUCCEEDED, 100.0 + start, 100.0 + end
+        detail.output = "x" * 1000
+        detail.input_tokens, detail.output_tokens = 10_000, 1_000
+    record.nodes["b"].inputs = [InputRecord(from_node="a", content="x" * 1000, original_chars=1000)]
+    record.nodes["d"].inputs = [
+        InputRecord(from_node="b", content="x" * 800, original_chars=1000),  # clipped: what it saw counts
+        InputRecord(from_node="c", content="x" * 1000, original_chars=1000),
+    ]
+    record.status = RunStatus.SUCCEEDED
+
+    split = split_summary(record)
+    assert split["agents"] == 4
+    assert split["time"] == {"agent_seconds": 55.0, "wall_seconds": 35.0}
+    assert split["context"] == {"largest_handoff_chars": 1800, "output_chars": 4000}
+    flagships = [m for m in COMPARISON_MODELS if m.flagship]
+    assert {m.provider for m in flagships} == {"Anthropic", "OpenAI", "xAI", "Google"}
+    prices = [(40_000 * m.input_per_1m + 4_000 * m.output_per_1m) / 1e6 for m in flagships]
+    cost = split["cost"]
+    assert cost["frontier_low_usd"] == pytest.approx(min(prices))
+    assert cost["frontier_high_usd"] == pytest.approx(max(prices))
+    assert cost["frontier_low_usd"] < cost["frontier_high_usd"]
+    assert cost["frontier_models"] == [m.label for m in flagships] and cost["prices_checked"]
+
+
+def test_split_summary_needs_two_agents_that_ran_and_tokens_to_price():
+    from orchestrator.split import split_summary
+
+    record = RunStore().create("t", diamond_plan())
+    record.status = RunStatus.FAILED
+    first = record.nodes["a"]
+    first.status, first.started_at, first.ended_at = NodeStatus.FAILED, 1.0, 2.0
+    assert split_summary(record) is None  # one agent ran, the rest were skipped: nothing was split
+
+    api_module.app.state.runner = stub_runner
+    try:
+        client = api_client()
+        run_id = client.post("/tasks", json={"task": "demo", "plan": diamond_plan().model_dump()}).json()["run_id"]
+        split = _wait_for(client, run_id)["split"]
+        assert split["agents"] == 4 and split["time"]["wall_seconds"] >= 0
+        assert split["context"]["output_chars"] == sum(len(f"out-{n}") for n in "abcd")
+        assert split["cost"] is None  # the stub runner uses no tokens
+    finally:
+        api_module.app.state.runner = None
+
+
+def test_baseline_reruns_the_task_as_one_agent_and_links_both_runs():
+    from orchestrator.split import baseline_model
+
+    plan = diamond_plan()
+    plan.nodes[1].tools, plan.nodes[2].tools = ["calc"], ["calc"]  # tools are pooled, without repeats
+    api_module.app.state.runner = stub_runner
+    try:
+        client = api_client()
+        run_id = client.post("/tasks", json={"task": "demo", "plan": plan.model_dump()}).json()["run_id"]
+        assert _wait_for(client, run_id)["compare"] is None
+
+        solo_id = client.post(f"/runs/{run_id}/baseline").json()["run_id"]
+        solo = client.get(f"/runs/{solo_id}").json()
+        # premium model, so it always waits for a person even though the split run did not
+        assert solo["status"] == "awaiting_approval" and solo["task"] == "demo"
+        assert solo["model"] == baseline_model() == KIMI and solo["mode"] is None and solo["deliver"] == "none"
+        assert [(n["node_id"], n["tools"], n["tier"]) for n in solo["nodes"]] == [("solo", ["calc"], "heavy")]
+        assert solo["compare"]["viewing"] == "single" and solo["compare"]["split"]["run_id"] == run_id
+
+        client.post(f"/runs/{solo_id}/approve")
+        solo = _wait_for(client, solo_id)
+        assert solo["split"] is None  # one agent: nothing was split
+        compare = client.get(f"/runs/{run_id}").json()["compare"]
+        assert compare["viewing"] == "split"
+        assert compare["split"]["agents"] == 4 and compare["single"]["agents"] == 1
+        assert compare["single"]["run_id"] == solo_id and compare["single"]["status"] == "succeeded"
+        assert compare["single"]["seconds"] is not None and compare["single"]["total_cost_usd"] == 0.0
+
+        assert client.post(f"/runs/{solo_id}/baseline").status_code == 409  # no baseline of a baseline
+        assert client.post("/runs/nope/baseline").status_code == 404
+    finally:
+        api_module.app.state.runner = None
+
+
+def test_baseline_needs_a_finished_multi_agent_run_and_survives_a_reload(tmp_path):
+    client = api_client()
+    waiting = client.post(
+        "/tasks", json={"task": "demo", "plan": diamond_plan().model_dump(), "require_approval": True}
+    ).json()["run_id"]
+    assert client.post(f"/runs/{waiting}/baseline").status_code == 409  # not finished
+
+    store = RunStore(str(tmp_path / "runs.db"))
+    record = store.create("t", diamond_plan())
+    record.baseline_of, record.baseline_id = "aaa", "bbb"
+    record.emit("saved")
+    loaded = RunStore(str(tmp_path / "runs.db")).get(record.run_id)
+    assert (loaded.baseline_of, loaded.baseline_id) == ("aaa", "bbb")

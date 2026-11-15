@@ -37,6 +37,58 @@ by screen, explains what broke during development, and ends with exercises.
 | Parallelism and failure | Run a plan with parallel steps; make one fail | `executor.py`: LangGraph edges, skip logic |
 | Cost | Compare the estimate with each agent's run stats | `executor.py`: `agent_limits`; `estimate.py` |
 
+## Why not just one big model?
+
+A single frontier model with every tool attached can do most of the tasks you'd give Dagwood, and
+on a small or tightly connected task it will often give the better answer. So the case for
+splitting a task into agents is not "more agents, better output". It is that the split gives you
+things one long model call doesn't:
+
+| What you get | Where you can see it |
+| --- | --- |
+| **The plan is on the table before you pay for it.** You can edit it, re-route it or reject it. One model's plan stays inside its reasoning. | Plan review and the plan editor |
+| **Cheap models can do the narrow jobs.** A step that only fetches or reformats doesn't need the strongest model. | Cost modes and per-agent tiers |
+| **Each agent reads a small, chosen context.** It sees its own goal and the outputs of the steps it depends on, not everything so far. | "Inputs from upstream agents" on any agent; the sizes on the arrows |
+| **Independent steps run at the same time.** | The graph while a run is in progress |
+| **A failure has an address.** One agent hits its limit, the steps after it are skipped with a reason, and the rest keeps its results. | Exercise 4 in the article |
+| **Tools are handed out per step.** The agent that summarises never holds the tool that sends email. | The tools listed on each agent |
+| **You can audit it.** When a number is wrong, you can find the step that produced it and read what it was given. | Any agent's panel |
+| **You are not tied to one model.** If a model is overloaded, withdrawn or just having a bad day, a step can be moved to another one without redesigning anything. | The mode and model pickers; see the caveat below |
+
+After a run with two or more agents, the strip under the run header ("What the split bought")
+puts numbers on the first few: how long the agents worked against how long the run took, and the
+most text any one agent was handed against everything the agents wrote.
+
+The strip can also settle the question for one task at a time. **Run it as one agent** starts
+the same task again as a single agent holding every tool the plan used, on the strongest model
+in the list. It waits for your approval first, because that model costs more, and you can pick a
+different model there. When it finishes, both runs show cost and time side by side, and you can
+open each to compare the answers. That is one run each, so it is an anecdote and not a
+benchmark, and the single agent works under the same per-agent limits as any other agent, so a
+search-heavy task can stop it early.
+
+**On cost, be careful what you conclude.** Until you have run that comparison, the strip shows what the same amount of text
+might cost at other providers' flagship prices, as a loose range. Nobody ran those models. A
+different model would read and write a different amount, and a single agent doing the whole task
+would not make the same calls, so the real figure could be well outside the range in either
+direction. Read it as "probably a different order of magnitude", not as a saving you can quote.
+
+**On outages.** If one model does everything, then that model being slow, rate-limited,
+deprecated or down stops all of your work at once, and there is nothing to fall back to without
+re-testing everything on a different model. When work is already cut into steps with typed
+inputs and outputs, moving one step, or all of them, to another model is a setting. Dagwood only
+goes part of the way here: you can switch mode or pin a different model per agent, but every
+model it runs is served by one provider (DeepInfra), so an outage there still stops everything,
+and nothing fails over automatically. Adding a second provider behind `get_model` in
+`orchestrator/factory.py` is the change that would make this real.
+
+**When one model is the better choice:**
+
+- The task is small. Planning costs a model call and the handoffs lose detail.
+- Every part depends on every other part. Cutting it into steps throws away context the answer
+  needs (exercise 3 in the article shows what that looks like).
+- You need the best possible answer and don't need to see, steer or cap how it was reached.
+
 ## What's in here
 
 | Concern | Where | What to look at |
@@ -48,6 +100,7 @@ by screen, explains what broke during development, and ends with exercises.
 | Run lifecycle | `orchestrator/manager.py` | Background tasks, hard stop, per-user concurrency limit and FIFO queue |
 | Model routing | `orchestrator/models.py` | Planner assigns each agent a tier (light/standard/heavy); a cost mode maps tiers to models |
 | Cost estimates | `orchestrator/estimate.py`, `pricing.py` | Forecast learned from this server's own past runs (median and p90 per agent kind) |
+| After-run comparison | `orchestrator/split.py`, `api.py` (`baseline_run`) | Agent time against run time, largest handoff against total output, a loose flagship-price range that is labelled as a guess, and a single-agent re-run of the same task to measure against |
 | Tools | `orchestrator/tools.py`, `custom_tools.py`, `catalog.py`, `composio_source.py` | A built-in tool, a placeholder for writing your own, a pluggable tool catalog, scoped per-agent MCP toolsets, destructive tools blocked |
 | Live output | `orchestrator/live.py`, `api.py` | pydantic-ai stream events → in-memory feed → SSE |
 | Persistence | `orchestrator/store.py` | Event log + SQLite snapshots; runs survive restarts |
@@ -60,6 +113,9 @@ You need **Python 3.13**, **Node 20.19+ or 22.12+** (required by Vite 8), and a 
 (create one at [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys)). That's the only
 key required. A Composio key is optional and adds web search and app tools; see
 [below](#optional-web-search-and-app-tools-composio).
+
+Prefer containers? With Docker you need only the API key: skip to
+[Or run it with Docker](#or-run-it-with-docker).
 
 ### 1. Backend
 
@@ -75,7 +131,7 @@ PDF output uses WeasyPrint, which needs Pango from your OS:
 
 - Debian/Ubuntu/WSL: `sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0`
 - macOS: `brew install pango`
-- Windows: use WSL
+- Windows: use WSL, or [Docker](#or-run-it-with-docker)
 
 ### 2. Run the tests (no keys needed)
 
@@ -87,6 +143,15 @@ The suite uses pydantic-ai's test and function models, so it makes no network ca
 nothing. It's also a good way to read how each piece behaves.
 
 ### 3. Start it
+
+```bash
+./start.sh
+```
+
+This starts the API on http://localhost:8000 and the UI on http://localhost:5173, installing the
+UI's packages the first time. Ctrl-C stops both. It runs on Linux, macOS and WSL.
+
+To run the two halves yourself, in separate terminals:
 
 ```bash
 uvicorn orchestrator.api:app --reload           # API on http://localhost:8000
@@ -103,6 +168,29 @@ set **Agents** (how many) and **Agent types** (for example `researcher, critic`,
 `fact checker`). Both are optional hints: the planner follows them where the task allows. Typical runs there cost
 a fraction of a cent: a 3-agent run cost $0.0005 in November 2026. Model prices change often, so
 treat every figure as an estimate (see [Limitations](#limitations-read-before-you-rely-on-it)).
+
+### Or run it with Docker
+
+If you'd rather not install Python, Node and Pango, Docker can run both halves. This replaces
+steps 1 to 3 above; you need Docker with Compose (Docker Desktop includes it) and nothing else.
+
+```bash
+cp .env.example .env        # then set DEEPINFRA_API_KEY
+docker compose up
+```
+
+Open http://localhost:5173 once the `ui` container prints its address (it waits for the API).
+The first start builds an image and installs the UI's packages, so it takes a few minutes.
+
+- Your checkout is mounted into the containers, so edits to `orchestrator/` and `ui/src` reload
+  as they do outside Docker.
+- Run history and generated files live in a Docker volume, separate from a local `runs.db`.
+  `docker compose down` keeps them; `docker compose down -v` deletes them.
+- Ports are published on `127.0.0.1` only, because there is no auth.
+- After changing `.env`, restart the API so it reads the new values: `docker compose restart api`.
+- After changing `requirements.txt`, rebuild with `docker compose up --build`.
+- Use either Docker or `./start.sh`, not both at once: they use the same two ports.
+- To run the tests in the container: `docker compose run --rm api python -m pytest -q tests`.
 
 ### Optional: web search and app tools (Composio)
 
@@ -211,7 +299,11 @@ This is a learning project, not a product.
   practice, search agents often need 200k+ and hit the cap, so keep search steps on
   light/standard tiers.
 - **Comparison models are estimate-only.** The Claude/OpenAI/xAI/Gemini prices appear in
-  estimates, but there's no client for them; only DeepInfra models run.
+  estimates, but there's no client for them; only DeepInfra models run. The flagship range in
+  the after-run strip is this run's token counts at their list prices, which is a guess at best:
+  those models were never run on the task.
+- **One provider, no failover.** Every runnable model is served by DeepInfra. Retries cover
+  short overloads; a longer outage stops all runs, and switching models is manual.
 - **Live output is best-effort.** If the model connection drops mid-stream, that agent fails
   (client retries only cover opening a request). The streamed feed is in memory only. The
   finished agent's output, thoughts and tool calls are what get saved.
@@ -232,6 +324,8 @@ orchestrator/   FastAPI app, planner, executor, routing, estimates, tools, docum
 tests/          pytest suite (no network)
 scripts/        live integration checks
 ui/             React + Vite front end
+start.sh        starts the API and the UI together
+compose.yaml    the Docker way to run both (with Dockerfile)
 ```
 
 ## Contributing

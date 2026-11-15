@@ -74,6 +74,15 @@ export function HowItWorksContent() {
         back to the planner, the limits on tools and tokens, the points where a person can step in, and what each step
         costs. Run small tasks, click everything, and compare what you see with the code.
       </p>
+      <p className="hiw-purpose">
+        <strong>Why a team and not one big model?</strong> One strong model can often give an answer as good or
+        better, especially on small tasks. Splitting the work buys other things: you see and edit the plan before it
+        runs, cheap models handle the simple steps, each agent reads only what it needs, independent steps run side by
+        side, a failure points at one step, and no step is tied to a single model if that model is overloaded or
+        withdrawn. After a run, open “What the split bought” under the run title for the numbers. Its flagship-price
+        line is a loose guess, not a measurement. To measure, use “Run it as one agent” there and compare the two
+        runs.
+      </p>
       <ol className="hiw-steps">
         {STEPS.map((s, i) => (
           <li key={s.title}>

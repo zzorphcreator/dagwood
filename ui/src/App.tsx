@@ -11,6 +11,7 @@ import NodePanel from './NodePanel';
 import PlanEditor from './PlanEditor';
 import RoutingSelect, { modeSummary, modelLabel, parseRouting, routingKey } from './Routing';
 import RunSwitcher, { type RunRef } from './RunSwitcher';
+import SplitStrip, { BaselineBanner } from './SplitStrip';
 import ToolsDrawer from './ToolsDrawer';
 import {
   cancelRun,
@@ -32,6 +33,7 @@ import {
   MAX_AGENTS_HINT,
   parseAgentTypes,
   setRunRouting,
+  startBaseline,
   submitTask,
   type NodeEdit,
   type CostEstimate,
@@ -447,6 +449,21 @@ export default function App() {
     setError(null);
   };
 
+  // The same task as one agent on the strongest model; it opens awaiting approval.
+  const runBaseline = async () => {
+    if (!summary) return;
+    try {
+      const { run_id } = await startBaseline(summary.run_id);
+      setRuns((prev) => [
+        { id: run_id, task: summary.task, status: 'awaiting_approval', created_at: Date.now() / 1000 },
+        ...prev.filter((r) => r.id !== run_id),
+      ]);
+      openRun(run_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const panel =
     detail && summary?.status === 'awaiting_approval' ? (
       <PlanEditor
@@ -668,6 +685,19 @@ export default function App() {
                 </button>
               )}
             </div>
+          )}
+          {summary?.split && summary.compare?.viewing !== 'single' && (
+            <SplitStrip
+              key={summary.run_id}
+              split={summary.split}
+              compare={summary.compare ?? null}
+              modelName={(id) => modelLabel(models, id)}
+              onBaseline={runBaseline}
+              onOpen={openRun}
+            />
+          )}
+          {summary?.compare?.viewing === 'single' && (
+            <BaselineBanner compare={summary.compare} modelName={(id) => modelLabel(models, id)} onOpen={openRun} />
           )}
           {summary?.status === 'failed' && summary.error && (
             <div className="banner error">Run failed: {summary.error}</div>

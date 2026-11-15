@@ -1,0 +1,49 @@
+# A second way to run Dagwood: `docker compose up`, then open http://localhost:5173.
+# Needs a .env with DEEPINFRA_API_KEY (cp .env.example .env). See "Run with Docker" in the README.
+#
+# Your checkout is mounted into both containers, so edits to orchestrator/ and ui/src reload
+# as they do outside Docker. Ports are published on 127.0.0.1 only: there is no auth.
+
+services:
+  api:
+    build: .
+    volumes:
+      - .:/app
+      - dagwood-data:/data
+    environment:
+      # Run history and generated files live in a Docker volume, apart from a local runs.db.
+      ORCHESTRATOR_DB: /data/runs.db
+      ORCHESTRATOR_FILES_DIR: /data/artifacts
+      # The UI container reaches this one by its service name, so that name must be an allowed Host.
+      ORCHESTRATOR_ALLOWED_HOSTS: localhost,127.0.0.1,::1,api
+      # File-change events don't cross the mount on Docker Desktop (macOS, Windows); poll instead.
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      # A bare connection, not an HTTP request, so the check doesn't fill the API log.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 3).close()"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  ui:
+    image: node:22-slim
+    working_dir: /app/ui
+    volumes:
+      - ./ui:/app/ui
+      # The container's own packages, so it never touches (or needs) a node_modules built on the host.
+      - dagwood-node-modules:/app/ui/node_modules
+    environment:
+      DAGWOOD_API_URL: http://api:8000
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  dagwood-data:
+  dagwood-node-modules:

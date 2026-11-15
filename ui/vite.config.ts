@@ -1,6 +1,9 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+// Where the dev server forwards API calls. compose.yaml points this at the api container.
+const api = process.env.DAGWOOD_API_URL ?? 'http://localhost:8000'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -9,11 +12,11 @@ export default defineConfig({
     // don't reliably reach Linux processes; poll so edits always reach the dev server.
     watch: { usePolling: true, interval: 300 },
     proxy: {
-      '/tasks': 'http://localhost:8000',
-      '/runs': 'http://localhost:8000',
-      '/tools': 'http://localhost:8000',
-      '/models': 'http://localhost:8000',
-      '/modes': 'http://localhost:8000',
+      '/tasks': api,
+      '/runs': api,
+      '/tools': api,
+      '/models': api,
+      '/modes': api,
     },
   },
 })
